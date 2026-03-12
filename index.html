@@ -14,7 +14,7 @@
             --radius-lg: 16px;
             --radius-md: 10px;
             --shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-            --highlight: #e0e7ff; /* Light blue for bulk selection */
+            --highlight: #e0e7ff; 
             --highlight-border: #4f46e5;
         }
 
@@ -61,10 +61,22 @@
 
         /* Task List */
         .task-item { 
-            display: flex; align-items: center; padding: 12px 16px; margin-bottom: 8px; 
+            display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; margin-bottom: 8px; 
             background: #fafafa; border: 1px solid var(--border); border-radius: var(--radius-md); 
+            transition: all 0.2s;
         }
+        .task-item-left { display: flex; align-items: center; }
         .task-color-indicator { width: 12px; height: 12px; border-radius: 50%; margin-right: 12px; flex-shrink: 0; }
+        
+        /* Delete Button */
+        .delete-btn {
+            width: auto; background: transparent; color: var(--text-muted); border: none; 
+            padding: 6px; border-radius: 6px; margin: 0; opacity: 0; transition: all 0.2s;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .delete-btn:hover { background: #fee2e2; color: #ef4444; }
+        .task-item:hover .delete-btn { opacity: 1; }
+        @media (hover: none) { .delete-btn { opacity: 1; } } /* Always show on touch devices */
 
         /* Calendar */
         .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
@@ -78,7 +90,6 @@
         .day.empty { background: transparent; border: none; cursor: default; }
         .day-num { font-size: 0.875rem; font-weight: 500; margin-bottom: 4px; text-align: center; line-height: 1.1; pointer-events: none; }
         
-        /* Bulk Selection Styles */
         .day.bulk-selected { background: var(--highlight); border: 2px solid var(--highlight-border); }
 
         .dot-container { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; width: 100%; pointer-events: none; }
@@ -192,7 +203,6 @@
         let viewDate = new Date(); 
         let selectedDateStr = null;
         
-        // Bulk Mode Variables
         let isBulkMode = false;
         let bulkSelectedDates = [];
         let isModalInBulkMode = false;
@@ -231,13 +241,37 @@
             renderTaskList();
         }
 
+        function deleteTask(taskId) {
+            if(confirm("Are you sure you want to delete this task? This will also permanently remove it from your calendar history.")) {
+                // Remove the task
+                tasks = tasks.filter(t => t.id !== taskId);
+                
+                // Clean up any historical completions so dots don't linger
+                completions = completions.filter(c => c.taskId !== taskId);
+                
+                // Save and refresh
+                localStorage.setItem('tasks', JSON.stringify(tasks));
+                localStorage.setItem('completions', JSON.stringify(completions));
+                renderTaskList();
+            }
+        }
+
         function renderTaskList() {
             const list = document.getElementById('taskList');
             if(tasks.length === 0) { list.innerHTML = '<div style="color:#a1a1aa; font-size:0.875rem;">No tasks yet.</div>'; return; }
             list.innerHTML = tasks.map(t => `
                 <div class="task-item">
-                    <div class="task-color-indicator" style="background:${t.color}"></div>
-                    <span style="font-weight: 500;">${t.name}</span>
+                    <div class="task-item-left">
+                        <div class="task-color-indicator" style="background:${t.color}"></div>
+                        <span style="font-weight: 500;">${t.name}</span>
+                    </div>
+                    <button class="delete-btn" onclick="deleteTask(${t.id})" title="Delete Task">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 6h18"></path>
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                        </svg>
+                    </button>
                 </div>
             `).join('');
         }
@@ -258,10 +292,9 @@
             }
         }
 
-        /* --- BULK MODE LOGIC --- */
         function toggleBulkMode() {
             isBulkMode = !isBulkMode;
-            bulkSelectedDates = []; // reset selections
+            bulkSelectedDates = []; 
             
             const btn = document.getElementById('bulkToggleBtn');
             const applyBtn = document.getElementById('applyBulkBtn');
@@ -280,21 +313,15 @@
 
         function handleDateClick(dateStr, dayNum) {
             if (isBulkMode) {
-                // Toggle selection for bulk mode
                 const index = bulkSelectedDates.indexOf(dateStr);
-                if (index > -1) {
-                    bulkSelectedDates.splice(index, 1);
-                } else {
-                    bulkSelectedDates.push(dateStr);
-                }
-                renderStandardCalendar(); // Re-render to show selection highlight
+                if (index > -1) { bulkSelectedDates.splice(index, 1); } 
+                else { bulkSelectedDates.push(dateStr); }
+                renderStandardCalendar(); 
             } else {
-                // Normal single-day behavior
                 openModal(dateStr, dayNum);
             }
         }
 
-        // Renders the standard 1-month calendar for Sheet 2
         function renderStandardCalendar() {
             const container = document.getElementById('calendar');
             container.innerHTML = '';
@@ -305,20 +332,17 @@
             const daysInMonth = new Date(year, month + 1, 0).getDate();
             const firstDayIndex = new Date(year, month, 1).getDay(); 
 
-            // Headers
             ['S', 'M', 'T', 'W', 'T', 'F', 'S'].forEach(h => {
                 const div = document.createElement('div');
                 div.className = 'day header'; div.innerText = h;
                 container.appendChild(div);
             });
 
-            // Empty padding
             for (let i = 0; i < firstDayIndex; i++) {
                 const div = document.createElement('div'); div.className = 'day empty';
                 container.appendChild(div);
             }
 
-            // Actual Days
             for (let i = 1; i <= daysInMonth; i++) {
                 const dStr = String(i).padStart(2, '0');
                 const mStr = String(month + 1).padStart(2, '0');
@@ -327,10 +351,7 @@
                 const div = document.createElement('div');
                 div.className = 'day';
                 
-                // Highlight if selected in bulk mode
-                if (isBulkMode && bulkSelectedDates.includes(dateStr)) {
-                    div.classList.add('bulk-selected');
-                }
+                if (isBulkMode && bulkSelectedDates.includes(dateStr)) { div.classList.add('bulk-selected'); }
 
                 div.innerHTML = `<div class="day-num">${i}</div><div class="dot-container"></div>`;
                 
@@ -350,13 +371,11 @@
                 container.appendChild(div);
             }
             
-            // Update the apply button text to show count
             if (isBulkMode) {
                 document.getElementById('applyBulkBtn').innerText = `Apply Task to ${bulkSelectedDates.length} Selected`;
             }
         }
 
-        // Specifically handles generating the custom date range for Sheet 3
         function renderFilteredCalendar() {
             const taskId = document.getElementById('filterSelect').value;
             const fromDateVal = document.getElementById('fromDate').value;
@@ -423,7 +442,6 @@
             }
         }
 
-        // Single Date Modal
         function openModal(dateStr, dayNum) {
             if(tasks.length === 0) { alert("Please add a task in Sheet 1 first!"); return; }
             selectedDateStr = dateStr;
@@ -436,7 +454,6 @@
             renderModalOptions();
         }
 
-        // Bulk Date Modal
         function openBulkModal() {
             if(bulkSelectedDates.length === 0) { alert("Please select at least one date!"); return; }
             if(tasks.length === 0) { alert("Please add a task in Sheet 1 first!"); return; }
@@ -445,7 +462,6 @@
             document.getElementById('modalDateDisplay').innerText = `${bulkSelectedDates.length} Selected Days`;
             document.getElementById('modal').style.display = 'flex';
             
-            // Render specific bulk options
             const options = document.getElementById('modalOptions');
             options.innerHTML = tasks.map(t => `
                 <button class="modal-btn" onclick="applyBulkTask(${t.id})">
@@ -459,7 +475,7 @@
         }
 
         function renderModalOptions() {
-            if (isModalInBulkMode) return; // Handled directly in openBulkModal
+            if (isModalInBulkMode) return; 
             
             const options = document.getElementById('modalOptions');
             options.innerHTML = tasks.map(t => {
@@ -478,7 +494,6 @@
 
         function closeModal() { document.getElementById('modal').style.display = 'none'; }
 
-        // Logic for single day toggling
         function toggleCompletion(taskId) {
             const existsIndex = completions.findIndex(c => c.date === selectedDateStr && c.taskId === taskId);
             if(existsIndex > -1) { completions.splice(existsIndex, 1); } 
@@ -489,10 +504,8 @@
             renderStandardCalendar(); 
         }
 
-        // Logic for applying a task to multiple days
         function applyBulkTask(taskId) {
             bulkSelectedDates.forEach(dateStr => {
-                // Check if the task is already on this date so we don't duplicate it
                 const alreadyExists = completions.some(c => c.date === dateStr && c.taskId === taskId);
                 if (!alreadyExists) {
                     completions.push({ date: dateStr, taskId: taskId });
@@ -501,7 +514,7 @@
             
             localStorage.setItem('completions', JSON.stringify(completions));
             closeModal();
-            toggleBulkMode(); // Automatically exit bulk mode after applying
+            toggleBulkMode(); 
         }
 
         function updateFilterOptions() {
