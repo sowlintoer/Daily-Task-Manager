@@ -14,6 +14,8 @@
             --radius-lg: 16px;
             --radius-md: 10px;
             --shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+            --highlight: #e0e7ff; /* Light blue for bulk selection */
+            --highlight-border: #4f46e5;
         }
 
         body { 
@@ -36,21 +38,26 @@
         .form-group { margin-bottom: 20px; }
         .flex-group { display: flex; gap: 12px; margin-bottom: 20px; }
         .flex-group > div { flex: 1; }
+        .flex-row { display: flex; gap: 10px; margin-bottom: 20px; align-items: stretch; }
         
         label { display: block; font-size: 0.875rem; font-weight: 500; color: var(--text-muted); margin-bottom: 8px; }
         
         input[type="text"], input[type="month"], input[type="date"], select { 
             width: 100%; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-md); 
-            font-size: 1rem; box-sizing: border-box; background: #fafafa; transition: border 0.2s; 
+            font-size: 1rem; box-sizing: border-box; background: #fafafa; transition: border 0.2s; margin: 0;
         }
         input:focus, select:focus { outline: none; border-color: #a1a1aa; background: #fff; }
         
         button { 
             width: 100%; background: var(--text-main); color: white; border: none; 
             padding: 14px; border-radius: var(--radius-md); font-size: 1rem; font-weight: 500; 
-            cursor: pointer; transition: transform 0.1s; 
+            cursor: pointer; transition: transform 0.1s; margin: 0;
         }
         button:active { transform: scale(0.98); }
+        
+        .btn-outline { background: transparent; color: var(--text-main); border: 1px solid var(--border); width: auto; white-space: nowrap; }
+        .btn-outline.active { background: var(--text-main); color: white; border-color: var(--text-main); }
+        .btn-primary { background: var(--highlight-border); color: white; margin-bottom: 15px; }
 
         /* Task List */
         .task-item { 
@@ -60,19 +67,21 @@
         .task-color-indicator { width: 12px; height: 12px; border-radius: 50%; margin-right: 12px; flex-shrink: 0; }
 
         /* Calendar */
-        .calendar-controls { margin-bottom: 20px; }
         .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
         .day { 
             aspect-ratio: 1/1; background: #fafafa; border: 1px solid var(--border); 
             border-radius: 8px; padding: 6px; position: relative; cursor: pointer; 
-            display: flex; flex-direction: column; align-items: center;
+            display: flex; flex-direction: column; align-items: center; transition: all 0.2s;
         }
         .day:hover { background: #f4f4f5; }
         .day.header { background: transparent; border: none; font-size: 0.75rem; color: var(--text-muted); font-weight: 600; text-align: center; cursor: default; padding-bottom: 0; aspect-ratio: auto; min-height: 20px; }
         .day.empty { background: transparent; border: none; cursor: default; }
-        .day-num { font-size: 0.875rem; font-weight: 500; margin-bottom: 4px; text-align: center; line-height: 1.1; }
+        .day-num { font-size: 0.875rem; font-weight: 500; margin-bottom: 4px; text-align: center; line-height: 1.1; pointer-events: none; }
         
-        .dot-container { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; width: 100%; }
+        /* Bulk Selection Styles */
+        .day.bulk-selected { background: var(--highlight); border: 2px solid var(--highlight-border); }
+
+        .dot-container { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; width: 100%; pointer-events: none; }
         .dot { width: 8px; height: 8px; border-radius: 50%; }
 
         /* Stats */
@@ -126,9 +135,14 @@
 
     <div id="sheet2" class="sheet">
         <h2>Calendar</h2>
-        <div class="calendar-controls">
-            <input type="month" id="monthPicker" onchange="handleMonthChange()">
+        
+        <div class="flex-row">
+            <input type="month" id="monthPicker" style="flex: 1;" onchange="handleMonthChange()">
+            <button id="bulkToggleBtn" class="btn-outline" onclick="toggleBulkMode()">Bulk Select</button>
         </div>
+        
+        <button id="applyBulkBtn" class="btn-primary" style="display: none;" onclick="openBulkModal()">Apply Task to Selected</button>
+
         <div id="calendar" class="calendar-grid"></div>
     </div>
 
@@ -168,7 +182,7 @@
         <div class="modal-content" onclick="event.stopPropagation()">
             <h3 style="margin-top: 0; margin-bottom: 20px;">Log Tasks for <span id="modalDateDisplay"></span></h3>
             <div id="modalOptions"></div>
-            <button class="cancel-btn" onclick="closeModal()">Done</button>
+            <button class="cancel-btn" onclick="closeModal()">Done/Cancel</button>
         </div>
     </div>
 
@@ -177,6 +191,11 @@
         let completions = JSON.parse(localStorage.getItem('completions')) || [];
         let viewDate = new Date(); 
         let selectedDateStr = null;
+        
+        // Bulk Mode Variables
+        let isBulkMode = false;
+        let bulkSelectedDates = [];
+        let isModalInBulkMode = false;
 
         function showSheet(num) {
             document.querySelectorAll('.sheet').forEach(s => s.classList.remove('active'));
@@ -189,18 +208,14 @@
                 renderStandardCalendar();
             }
             if(num === 3) {
-                // Auto-fill dates with the current month if they are empty
                 const fromInput = document.getElementById('fromDate');
                 const toInput = document.getElementById('toDate');
                 if (!fromInput.value || !toInput.value) {
                     const today = new Date();
                     const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-                    
-                    // Format dates to YYYY-MM-DD
                     fromInput.value = firstDay.toLocaleDateString('en-CA'); 
                     toInput.value = today.toLocaleDateString('en-CA');
                 }
-                
                 updateFilterOptions();
                 renderFilteredCalendar();
             }
@@ -243,6 +258,42 @@
             }
         }
 
+        /* --- BULK MODE LOGIC --- */
+        function toggleBulkMode() {
+            isBulkMode = !isBulkMode;
+            bulkSelectedDates = []; // reset selections
+            
+            const btn = document.getElementById('bulkToggleBtn');
+            const applyBtn = document.getElementById('applyBulkBtn');
+            
+            if (isBulkMode) {
+                btn.innerText = "Cancel Bulk";
+                btn.classList.add("active");
+                applyBtn.style.display = "block";
+            } else {
+                btn.innerText = "Bulk Select";
+                btn.classList.remove("active");
+                applyBtn.style.display = "none";
+            }
+            renderStandardCalendar();
+        }
+
+        function handleDateClick(dateStr, dayNum) {
+            if (isBulkMode) {
+                // Toggle selection for bulk mode
+                const index = bulkSelectedDates.indexOf(dateStr);
+                if (index > -1) {
+                    bulkSelectedDates.splice(index, 1);
+                } else {
+                    bulkSelectedDates.push(dateStr);
+                }
+                renderStandardCalendar(); // Re-render to show selection highlight
+            } else {
+                // Normal single-day behavior
+                openModal(dateStr, dayNum);
+            }
+        }
+
         // Renders the standard 1-month calendar for Sheet 2
         function renderStandardCalendar() {
             const container = document.getElementById('calendar');
@@ -261,10 +312,9 @@
                 container.appendChild(div);
             });
 
-            // Empty padding for first week
+            // Empty padding
             for (let i = 0; i < firstDayIndex; i++) {
-                const div = document.createElement('div');
-                div.className = 'day empty';
+                const div = document.createElement('div'); div.className = 'day empty';
                 container.appendChild(div);
             }
 
@@ -276,6 +326,12 @@
                 
                 const div = document.createElement('div');
                 div.className = 'day';
+                
+                // Highlight if selected in bulk mode
+                if (isBulkMode && bulkSelectedDates.includes(dateStr)) {
+                    div.classList.add('bulk-selected');
+                }
+
                 div.innerHTML = `<div class="day-num">${i}</div><div class="dot-container"></div>`;
                 
                 const dayCompletions = completions.filter(c => c.date === dateStr);
@@ -290,8 +346,13 @@
                     }
                 });
 
-                div.onclick = () => openModal(dateStr, i);
+                div.onclick = () => handleDateClick(dateStr, i);
                 container.appendChild(div);
+            }
+            
+            // Update the apply button text to show count
+            if (isBulkMode) {
+                document.getElementById('applyBulkBtn').innerText = `Apply Task to ${bulkSelectedDates.length} Selected`;
             }
         }
 
@@ -303,49 +364,32 @@
             const container = document.getElementById('filterCalendar');
             container.innerHTML = '';
 
-            // Calculate Stats for selected range
             let count = 0;
             if (taskId && fromDateVal && toDateVal) {
-                count = completions.filter(c => 
-                    c.taskId == taskId && 
-                    c.date >= fromDateVal && 
-                    c.date <= toDateVal
-                ).length;
+                count = completions.filter(c => c.taskId == taskId && c.date >= fromDateVal && c.date <= toDateVal).length;
             }
             document.getElementById('totalDays').innerText = count;
 
-            if (!fromDateVal || !toDateVal) {
-                container.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 20px;">Select a date range.</div>';
-                return;
-            }
+            if (!fromDateVal || !toDateVal) return;
 
-            // Parse dates accurately without timezone shift issues
             const [fYear, fMonth, fDay] = fromDateVal.split('-');
             const [tYear, tMonth, tDay] = toDateVal.split('-');
             const startDate = new Date(fYear, fMonth - 1, fDay);
             const endDate = new Date(tYear, tMonth - 1, tDay);
 
-            if (startDate > endDate) {
-                container.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 20px;">"From Date" must be before "To Date".</div>';
-                return;
-            }
+            if (startDate > endDate) return;
 
-            // Headers
             ['S', 'M', 'T', 'W', 'T', 'F', 'S'].forEach(h => {
-                const div = document.createElement('div');
-                div.className = 'day header'; div.innerText = h;
+                const div = document.createElement('div'); div.className = 'day header'; div.innerText = h;
                 container.appendChild(div);
             });
 
-            // Padding for the very first day of the range
             const firstDayIndex = startDate.getDay();
             for (let i = 0; i < firstDayIndex; i++) {
-                const div = document.createElement('div');
-                div.className = 'day empty';
+                const div = document.createElement('div'); div.className = 'day empty';
                 container.appendChild(div);
             }
 
-            // Iterate through every day in the range
             let currentDate = new Date(startDate);
             const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -355,43 +399,35 @@
                 const dStr = String(currentDate.getDate()).padStart(2, '0');
                 const dateStr = `${year}-${mStr}-${dStr}`;
 
-                const div = document.createElement('div');
-                div.className = 'day';
+                const div = document.createElement('div'); div.className = 'day';
 
-                // Add month name if it's the 1st of the month, or the very first square of the range
                 let dayDisplay = currentDate.getDate();
                 let isMonthStart = (currentDate.getDate() === 1 || currentDate.getTime() === startDate.getTime());
-                
-                if (isMonthStart) {
-                    dayDisplay = `${monthNames[currentDate.getMonth()]} ${dayDisplay}`;
-                }
+                if (isMonthStart) dayDisplay = `${monthNames[currentDate.getMonth()]} ${dayDisplay}`;
 
                 div.innerHTML = `<div class="day-num" style="${isMonthStart ? 'font-size: 0.65rem; font-weight: 700; color: var(--text-main);' : ''}">${dayDisplay}</div><div class="dot-container"></div>`;
 
-                // Add filtered dots
                 const dayCompletions = completions.filter(c => c.date === dateStr);
                 const dotContainer = div.querySelector('.dot-container');
                 
                 dayCompletions.forEach(c => {
                     const task = tasks.find(t => t.id == c.taskId);
                     if (task && (!taskId || task.id == taskId)) {
-                        const dot = document.createElement('div');
-                        dot.className = 'dot'; dot.style.background = task.color;
+                        const dot = document.createElement('div'); dot.className = 'dot'; dot.style.background = task.color;
                         dotContainer.appendChild(dot);
                     }
                 });
 
                 container.appendChild(div);
-                
-                // Advance to next day safely
                 currentDate.setDate(currentDate.getDate() + 1);
             }
         }
 
-        // Modal Logic
+        // Single Date Modal
         function openModal(dateStr, dayNum) {
             if(tasks.length === 0) { alert("Please add a task in Sheet 1 first!"); return; }
             selectedDateStr = dateStr;
+            isModalInBulkMode = false;
             
             const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
             document.getElementById('modalDateDisplay').innerText = `${monthNames[viewDate.getMonth()]} ${dayNum}`;
@@ -400,7 +436,31 @@
             renderModalOptions();
         }
 
+        // Bulk Date Modal
+        function openBulkModal() {
+            if(bulkSelectedDates.length === 0) { alert("Please select at least one date!"); return; }
+            if(tasks.length === 0) { alert("Please add a task in Sheet 1 first!"); return; }
+            
+            isModalInBulkMode = true;
+            document.getElementById('modalDateDisplay').innerText = `${bulkSelectedDates.length} Selected Days`;
+            document.getElementById('modal').style.display = 'flex';
+            
+            // Render specific bulk options
+            const options = document.getElementById('modalOptions');
+            options.innerHTML = tasks.map(t => `
+                <button class="modal-btn" onclick="applyBulkTask(${t.id})">
+                    <div style="display:flex; align-items:center;">
+                        <div class="task-color-indicator" style="background:${t.color}"></div>
+                        ${t.name}
+                    </div>
+                    <span>Add to All +</span>
+                </button>
+            `).join('');
+        }
+
         function renderModalOptions() {
+            if (isModalInBulkMode) return; // Handled directly in openBulkModal
+            
             const options = document.getElementById('modalOptions');
             options.innerHTML = tasks.map(t => {
                 const isCompleted = completions.some(c => c.date === selectedDateStr && c.taskId === t.id);
@@ -418,6 +478,7 @@
 
         function closeModal() { document.getElementById('modal').style.display = 'none'; }
 
+        // Logic for single day toggling
         function toggleCompletion(taskId) {
             const existsIndex = completions.findIndex(c => c.date === selectedDateStr && c.taskId === taskId);
             if(existsIndex > -1) { completions.splice(existsIndex, 1); } 
@@ -426,6 +487,21 @@
             localStorage.setItem('completions', JSON.stringify(completions));
             renderModalOptions(); 
             renderStandardCalendar(); 
+        }
+
+        // Logic for applying a task to multiple days
+        function applyBulkTask(taskId) {
+            bulkSelectedDates.forEach(dateStr => {
+                // Check if the task is already on this date so we don't duplicate it
+                const alreadyExists = completions.some(c => c.date === dateStr && c.taskId === taskId);
+                if (!alreadyExists) {
+                    completions.push({ date: dateStr, taskId: taskId });
+                }
+            });
+            
+            localStorage.setItem('completions', JSON.stringify(completions));
+            closeModal();
+            toggleBulkMode(); // Automatically exit bulk mode after applying
         }
 
         function updateFilterOptions() {
