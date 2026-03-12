@@ -34,8 +34,12 @@
 
         /* Forms & Inputs */
         .form-group { margin-bottom: 20px; }
+        .flex-group { display: flex; gap: 12px; margin-bottom: 20px; }
+        .flex-group > div { flex: 1; }
+        
         label { display: block; font-size: 0.875rem; font-weight: 500; color: var(--text-muted); margin-bottom: 8px; }
-        input[type="text"], input[type="month"], select { 
+        
+        input[type="text"], input[type="month"], input[type="date"], select { 
             width: 100%; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-md); 
             font-size: 1rem; box-sizing: border-box; background: #fafafa; transition: border 0.2s; 
         }
@@ -53,7 +57,7 @@
             display: flex; align-items: center; padding: 12px 16px; margin-bottom: 8px; 
             background: #fafafa; border: 1px solid var(--border); border-radius: var(--radius-md); 
         }
-        .task-color-indicator { width: 12px; height: 12px; border-radius: 50%; margin-right: 12px; }
+        .task-color-indicator { width: 12px; height: 12px; border-radius: 50%; margin-right: 12px; flex-shrink: 0; }
 
         /* Calendar */
         .calendar-controls { margin-bottom: 20px; }
@@ -131,12 +135,26 @@
     <div id="sheet3" class="sheet">
         <h2>History Filter</h2>
         <div class="form-group">
+            <label>Select Task</label>
             <select id="filterSelect" onchange="renderFilteredCalendar()"></select>
         </div>
+        
+        <div class="flex-group">
+            <div>
+                <label>From Date</label>
+                <input type="date" id="fromDate" onchange="renderFilteredCalendar()">
+            </div>
+            <div>
+                <label>To Date</label>
+                <input type="date" id="toDate" onchange="renderFilteredCalendar()">
+            </div>
+        </div>
+
         <div class="stats-box">
             <h1 id="totalDays">0</h1>
             <p>Days Completed</p>
         </div>
+        
         <div id="filterCalendar" class="calendar-grid"></div>
     </div>
 
@@ -216,7 +234,8 @@
             }
         }
 
-        function renderCalendar(containerId, filterTaskId = null) {
+        // Updated to accept fromDate and toDate constraints
+        function renderCalendar(containerId, filterTaskId = null, fromDateStr = null, toDateStr = null) {
             const container = document.getElementById(containerId);
             container.innerHTML = '';
             
@@ -226,7 +245,7 @@
             const daysInMonth = new Date(year, month + 1, 0).getDate();
             const firstDayIndex = new Date(year, month, 1).getDay(); 
 
-            // Headers (S, M, T...)
+            // Headers
             ['S', 'M', 'T', 'W', 'T', 'F', 'S'].forEach(h => {
                 const div = document.createElement('div');
                 div.className = 'day header'; div.innerText = h;
@@ -242,7 +261,6 @@
 
             // Actual Days
             for (let i = 1; i <= daysInMonth; i++) {
-                // Ensure double digits for matching format YYYY-MM-DD
                 const dStr = String(i).padStart(2, '0');
                 const mStr = String(month + 1).padStart(2, '0');
                 const dateStr = `${year}-${mStr}-${dStr}`;
@@ -256,7 +274,13 @@
                 
                 dayCompletions.forEach(c => {
                     const task = tasks.find(t => t.id == c.taskId);
-                    if (task && (!filterTaskId || task.id == filterTaskId)) {
+                    
+                    // Check if date falls within the selected range limits
+                    let isWithinRange = true;
+                    if (fromDateStr && dateStr < fromDateStr) isWithinRange = false;
+                    if (toDateStr && dateStr > toDateStr) isWithinRange = false;
+
+                    if (task && (!filterTaskId || task.id == filterTaskId) && isWithinRange) {
                         const dot = document.createElement('div');
                         dot.className = 'dot'; dot.style.background = task.color;
                         dotContainer.appendChild(dot);
@@ -303,8 +327,8 @@
             else { completions.push({ date: selectedDateStr, taskId: taskId }); }
             
             localStorage.setItem('completions', JSON.stringify(completions));
-            renderModalOptions(); // Refresh modal state visually
-            renderCalendar('calendar'); // Refresh background calendar
+            renderModalOptions(); 
+            renderCalendar('calendar'); 
         }
 
         function updateFilterOptions() {
@@ -315,11 +339,24 @@
 
         function renderFilteredCalendar() {
             const taskId = document.getElementById('filterSelect').value;
-            renderCalendar('filterCalendar', taskId);
+            const fromDate = document.getElementById('fromDate').value;
+            const toDate = document.getElementById('toDate').value;
             
+            // Re-render the mini calendar with the date constraints
+            renderCalendar('filterCalendar', taskId, fromDate, toDate);
+            
+            // Calculate Total Days
             if(taskId) {
-                const count = completions.filter(c => c.taskId == taskId).length;
-                document.getElementById('totalDays').innerText = count;
+                let filteredCount = completions.filter(c => c.taskId == taskId);
+                
+                if (fromDate) {
+                    filteredCount = filteredCount.filter(c => c.date >= fromDate);
+                }
+                if (toDate) {
+                    filteredCount = filteredCount.filter(c => c.date <= toDate);
+                }
+                
+                document.getElementById('totalDays').innerText = filteredCount.length;
             } else {
                 document.getElementById('totalDays').innerText = 0;
             }
