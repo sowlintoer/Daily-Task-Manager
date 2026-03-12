@@ -4,9 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Minimal Task Calendar</title>
-    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-
     <style>
         :root {
             --bg-color: #f4f4f5;
@@ -55,9 +53,9 @@
             width: 100%; background: var(--text-main); color: white; border: none; 
             padding: 14px; border-radius: var(--radius-md); font-size: 1rem; font-weight: 500; 
             cursor: pointer; transition: transform 0.1s; margin: 0;
-            display: flex; align-items: center; justify-content: center; gap: 8px;
         }
         button:active { transform: scale(0.98); }
+        button:disabled { background: var(--text-muted); cursor: not-allowed; opacity: 0.7; }
         
         .btn-outline { background: transparent; color: var(--text-main); border: 1px solid var(--border); width: auto; white-space: nowrap; }
         .btn-outline.active { background: var(--text-main); color: white; border-color: var(--text-main); }
@@ -76,10 +74,11 @@
         .delete-btn {
             width: auto; background: transparent; color: var(--text-muted); border: none; 
             padding: 6px; border-radius: 6px; margin: 0; opacity: 0; transition: all 0.2s;
+            display: flex; align-items: center; justify-content: center;
         }
         .delete-btn:hover { background: #fee2e2; color: #ef4444; }
         .task-item:hover .delete-btn { opacity: 1; }
-        @media (hover: none) { .delete-btn { opacity: 1; } } 
+        @media (hover: none) { .delete-btn { opacity: 1; } }
 
         /* Calendar */
         .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
@@ -98,17 +97,14 @@
         .dot-container { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; width: 100%; pointer-events: none; }
         .dot { width: 8px; height: 8px; border-radius: 50%; }
 
-        /* Capture Area for PNG export */
-        #captureArea {
-            background-color: var(--surface); /* Ensures white background on export */
-            padding: 10px;
-            border-radius: var(--radius-md);
-        }
-
-        /* Stats */
+        /* Stats & Export Area */
+        .export-wrapper { background: var(--surface); padding: 10px; border-radius: var(--radius-md); margin-bottom: 20px; }
         .stats-box { background: #fafafa; border: 1px solid var(--border); padding: 24px; border-radius: var(--radius-md); text-align: center; margin-bottom: 24px; }
         .stats-box h1 { margin: 0; font-size: 3rem; color: var(--text-main); }
         .stats-box p { margin: 5px 0 0 0; color: var(--text-muted); font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.05em; }
+
+        .export-btn { margin-top: 20px; display: flex; align-items: center; justify-content: center; gap: 8px; background: #10b981; }
+        .export-btn:hover { background: #059669; }
 
         /* Navigation */
         .tabs { 
@@ -168,18 +164,7 @@
     </div>
 
     <div id="sheet3" class="sheet">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-            <h2 style="margin: 0;">History Filter</h2>
-            <button onclick="downloadPNG()" class="btn-outline" style="padding: 8px 12px; font-size: 0.875rem;" title="Save as Image">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                    <polyline points="7 10 12 15 17 10"></polyline>
-                    <line x1="12" y1="15" x2="12" y2="3"></line>
-                </svg>
-                Save PNG
-            </button>
-        </div>
-
+        <h2>History Filter</h2>
         <div class="form-group">
             <label>Select Task</label>
             <select id="filterSelect" onchange="renderFilteredCalendar()"></select>
@@ -196,7 +181,9 @@
             </div>
         </div>
 
-        <div id="captureArea">
+        <div id="exportArea" class="export-wrapper">
+            <h3 id="exportTitle" style="text-align: center; margin-top: 0; color: var(--text-main); display: none;">Task History</h3>
+            
             <div class="stats-box">
                 <h1 id="totalDays">0</h1>
                 <p>Days Completed</p>
@@ -204,6 +191,15 @@
             
             <div id="filterCalendar" class="calendar-grid"></div>
         </div>
+
+        <button class="export-btn" id="downloadBtn" onclick="exportToPNG()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Save as Image
+        </button>
     </div>
 
     <div class="tabs">
@@ -541,31 +537,46 @@
                 tasks.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
         }
 
-        // Feature: Download History as PNG
-        function downloadPNG() {
-            const elementToCapture = document.getElementById('captureArea');
-            const btn = document.querySelector('button[onclick="downloadPNG()"]');
+        // --- Export to PNG Logic ---
+        function exportToPNG() {
+            const exportArea = document.getElementById('exportArea');
+            const downloadBtn = document.getElementById('downloadBtn');
+            const exportTitle = document.getElementById('exportTitle');
             
-            // Temporary styling for better image output
-            elementToCapture.style.background = '#ffffff'; 
+            // Show title for the image, disable button to prevent multiple clicks
+            exportTitle.style.display = 'block';
+            downloadBtn.innerText = 'Creating Image...';
+            downloadBtn.disabled = true;
+
+            // Optional: Get the task name for the filename
+            const select = document.getElementById('filterSelect');
+            const taskName = select.options[select.selectedIndex].text;
+            const fileNameName = taskName !== "-- All Tasks --" ? taskName.replace(/ /g, '_') : "All_Tasks";
             
-            html2canvas(elementToCapture, {
-                scale: 2, // Generates a high-res image
-                backgroundColor: '#ffffff'
+            // Use html2canvas to capture the element
+            html2canvas(exportArea, {
+                scale: 2, // Higher resolution
+                backgroundColor: '#ffffff' // Ensure white background
             }).then(canvas => {
-                // Restore original styling
-                elementToCapture.style.background = 'var(--surface)';
-                
+                // Create a temporary link to download the image
                 const link = document.createElement('a');
-                const fromDate = document.getElementById('fromDate').value || 'start';
-                const toDate = document.getElementById('toDate').value || 'end';
-                
-                link.download = `Task-History_${fromDate}_to_${toDate}.png`;
+                link.download = `Task_History_${fileNameName}.png`;
                 link.href = canvas.toDataURL('image/png');
                 link.click();
+                
+                // Reset UI
+                exportTitle.style.display = 'none';
+                downloadBtn.innerHTML = `
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg> Save as Image`;
+                downloadBtn.disabled = false;
             }).catch(err => {
-                console.error("Error generating image:", err);
-                alert("Failed to create image. Please try again.");
+                console.error("Error creating image:", err);
+                alert("Sorry, there was an error generating the image.");
+                downloadBtn.disabled = false;
             });
         }
 
