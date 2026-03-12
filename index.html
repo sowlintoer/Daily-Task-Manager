@@ -98,24 +98,20 @@
         .dot-container { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; width: 100%; pointer-events: none; }
         .dot { width: 8px; height: 8px; border-radius: 50%; }
 
-        /* Capture Area for PNG export */
+        /* Capture Area */
         #captureArea {
             background-color: var(--surface); 
-            padding: 15px;
+            padding: 20px 10px 10px 10px;
             border-radius: var(--radius-md);
-            margin-top: 10px;
         }
         
+        /* Dynamic Title inside Capture Area */
         #captureTitle {
+            margin: 0 0 20px 0;
             text-align: center;
-            margin-top: 0;
-            margin-bottom: 20px;
             font-size: 1.25rem;
+            font-weight: 600;
             color: var(--text-main);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
         }
 
         /* Stats */
@@ -210,7 +206,7 @@
         </div>
 
         <div id="captureArea">
-            <h3 id="captureTitle">All Tasks History</h3>
+            <h3 id="captureTitle">All Tasks</h3>
             
             <div class="stats-box">
                 <h1 id="totalDays">0</h1>
@@ -277,6 +273,11 @@
             localStorage.setItem('tasks', JSON.stringify(tasks));
             document.getElementById('taskName').value = '';
             renderTaskList();
+            
+            // Refresh filter options if currently on History sheet
+            if(document.getElementById('sheet3').classList.contains('active')) {
+                updateFilterOptions();
+            }
         }
 
         function deleteTask(taskId) {
@@ -418,14 +419,12 @@
             
             container.innerHTML = '';
 
-            // Update Dynamic Title Based on Selection
+            // Update Dynamic Title
             if (taskId) {
-                const activeTask = tasks.find(t => t.id == taskId);
-                if (activeTask) {
-                    captureTitle.innerHTML = `<div class="task-color-indicator" style="background:${activeTask.color}"></div> ${activeTask.name} History`;
-                }
+                const selectedTask = tasks.find(t => t.id == taskId);
+                captureTitle.innerText = selectedTask ? selectedTask.name : 'All Tasks';
             } else {
-                captureTitle.innerHTML = `All Tasks History`;
+                captureTitle.innerText = 'All Tasks';
             }
 
             let count = 0;
@@ -564,24 +563,20 @@
 
         function updateFilterOptions() {
             const select = document.getElementById('filterSelect');
+            
+            // Retain the currently selected value if it exists
+            const currentValue = select.value;
+            
             select.innerHTML = '<option value="">-- All Tasks --</option>' + 
                 tasks.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+                
+            if(currentValue) {
+                select.value = currentValue;
+            }
         }
 
         function downloadPNG() {
             const elementToCapture = document.getElementById('captureArea');
-            
-            // Generate dynamic filename
-            const taskId = document.getElementById('filterSelect').value;
-            let fileNamePrefix = "All_Tasks";
-            if (taskId) {
-                const activeTask = tasks.find(t => t.id == taskId);
-                if (activeTask) fileNamePrefix = activeTask.name.replace(/\s+/g, '_'); // Replaces spaces with underscores
-            }
-            
-            const fromDate = document.getElementById('fromDate').value || 'start';
-            const toDate = document.getElementById('toDate').value || 'end';
-            
             elementToCapture.style.background = '#ffffff'; 
             
             html2canvas(elementToCapture, {
@@ -591,7 +586,19 @@
                 elementToCapture.style.background = 'var(--surface)';
                 
                 const link = document.createElement('a');
-                link.download = `${fileNamePrefix}_History_${fromDate}_to_${toDate}.png`;
+                
+                // Construct a dynamic filename based on the task name
+                const taskId = document.getElementById('filterSelect').value;
+                let taskNameForFile = "All_Tasks";
+                if (taskId) {
+                    const selectedTask = tasks.find(t => t.id == taskId);
+                    if (selectedTask) taskNameForFile = selectedTask.name.replace(/[^a-z0-9]/gi, '_'); 
+                }
+                
+                const fromDate = document.getElementById('fromDate').value || 'start';
+                const toDate = document.getElementById('toDate').value || 'end';
+                
+                link.download = `${taskNameForFile}_History_${fromDate}_to_${toDate}.png`;
                 link.href = canvas.toDataURL('image/png');
                 link.click();
             }).catch(err => {
