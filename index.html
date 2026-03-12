@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minimal Task Calendar</title>
+    <style>
+        :root {
+            --bg-color: #f4f4f5;
+            --surface: #ffffff;
+            --text-main: #18181b;
+            --text-muted: #71717a;
+            --border: #e4e4e7;
+            --radius-lg: 16px;
+            --radius-md: 10px;
+            --shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+        }
+
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            background: var(--bg-color); 
+            color: var(--text-main);
+            margin: 0; 
+            padding: 20px 20px 80px 20px; 
+            -webkit-font-smoothing: antialiased;
+        }
+        
+        h2 { margin-top: 0; font-weight: 600; font-size: 1.5rem; letter-spacing: -0.02em; }
+        
+        .sheet { display: none; max-width: 500px; margin: 0 auto; background: var(--surface); padding: 24px; border-radius: var(--radius-lg); box-shadow: var(--shadow); }
+        .sheet.active { display: block; animation: fadeIn 0.3s ease; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Forms & Inputs */
+        .form-group { margin-bottom: 20px; }
+        label { display: block; font-size: 0.875rem; font-weight: 500; color: var(--text-muted); margin-bottom: 8px; }
+        input[type="text"], input[type="month"], select { 
+            width: 100%; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-md); 
+            font-size: 1rem; box-sizing: border-box; background: #fafafa; transition: border 0.2s; 
+        }
+        input:focus, select:focus { outline: none; border-color: #a1a1aa; background: #fff; }
+        
+        button { 
+            width: 100%; background: var(--text-main); color: white; border: none; 
+            padding: 14px; border-radius: var(--radius-md); font-size: 1rem; font-weight: 500; 
+            cursor: pointer; transition: transform 0.1s; 
+        }
+        button:active { transform: scale(0.98); }
+
+        /* Task List */
+        .task-item { 
+            display: flex; align-items: center; padding: 12px 16px; margin-bottom: 8px; 
+            background: #fafafa; border: 1px solid var(--border); border-radius: var(--radius-md); 
+        }
+        .task-color-indicator { width: 12px; height: 12px; border-radius: 50%; margin-right: 12px; }
+
+        /* Calendar */
+        .calendar-controls { margin-bottom: 20px; }
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+        .day { 
+            aspect-ratio: 1/1; background: #fafafa; border: 1px solid var(--border); 
+            border-radius: 8px; padding: 6px; position: relative; cursor: pointer; 
+            display: flex; flex-direction: column; align-items: center;
+        }
+        .day:hover { background: #f4f4f5; }
+        .day.header { background: transparent; border: none; font-size: 0.75rem; color: var(--text-muted); font-weight: 600; text-align: center; cursor: default; padding-bottom: 0; aspect-ratio: auto; min-height: 20px; }
+        .day.empty { background: transparent; border: none; cursor: default; }
+        .day-num { font-size: 0.875rem; font-weight: 500; margin-bottom: 4px; }
+        
+        .dot-container { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; width: 100%; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; }
+
+        /* Stats */
+        .stats-box { background: #fafafa; border: 1px solid var(--border); padding: 24px; border-radius: var(--radius-md); text-align: center; margin-bottom: 24px; }
+        .stats-box h1 { margin: 0; font-size: 3rem; color: var(--text-main); }
+        .stats-box p { margin: 5px 0 0 0; color: var(--text-muted); font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.05em; }
+
+        /* Navigation */
+        .tabs { 
+            display: flex; position: fixed; bottom: 0; left: 0; width: 100%; 
+            background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); 
+            border-top: 1px solid var(--border); z-index: 100; padding-bottom: env(safe-area-inset-bottom);
+        }
+        .tab { flex: 1; padding: 16px 0; text-align: center; cursor: pointer; font-size: 0.875rem; font-weight: 600; color: var(--text-muted); }
+        .tab.active { color: var(--text-main); }
+
+        /* Modal */
+        #modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); justify-content: center; align-items: flex-end; z-index: 1000; }
+        .modal-content { background: var(--surface); padding: 24px; border-radius: 20px 20px 0 0; width: 100%; max-width: 500px; box-sizing: border-box; animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        .modal-btn { display: flex; align-items: center; justify-content: space-between; background: #fafafa; border: 1px solid var(--border); color: var(--text-main); margin-bottom: 10px; }
+        .modal-btn.active { border-color: var(--text-main); font-weight: 600; }
+        .cancel-btn { background: var(--bg-color); color: var(--text-main); margin-top: 20px; }
+    </style>
+</head>
+<body>
+
+    <div id="sheet1" class="sheet active">
+        <h2>New Task</h2>
+        <div class="form-group">
+            <label>Task Name</label>
+            <input type="text" id="taskName" placeholder="e.g., Drink Milk">
+        </div>
+        <div class="form-group">
+            <label>Marker Color</label>
+            <select id="taskColor">
+                <option value="#fbbf24">🟡 Amber Yellow</option>
+                <option value="#ef4444">🔴 Coral Red</option>
+                <option value="#22c55e">🟢 Mint Green</option>
+                <option value="#3b82f6">🔵 Ocean Blue</option>
+                <option value="#a855f7">🟣 Royal Purple</option>
+            </select>
+        </div>
+        <button onclick="addTask()">Create Task</button>
+        
+        <div style="margin-top: 32px;">
+            <label>Your Tasks</label>
+            <div id="taskList"></div>
+        </div>
+    </div>
+
+    <div id="sheet2" class="sheet">
+        <h2>Calendar</h2>
+        <div class="calendar-controls">
+            <input type="month" id="monthPicker" onchange="handleMonthChange()">
+        </div>
+        <div id="calendar" class="calendar-grid"></div>
+    </div>
+
+    <div id="sheet3" class="sheet">
+        <h2>History Filter</h2>
+        <div class="form-group">
+            <select id="filterSelect" onchange="renderFilteredCalendar()"></select>
+        </div>
+        <div class="stats-box">
+            <h1 id="totalDays">0</h1>
+            <p>Days Completed</p>
+        </div>
+        <div id="filterCalendar" class="calendar-grid"></div>
+    </div>
+
+    <div class="tabs">
+        <div class="tab active" onclick="showSheet(1)">Add</div>
+        <div class="tab" onclick="showSheet(2)">Calendar</div>
+        <div class="tab" onclick="showSheet(3)">History</div>
+    </div>
+
+    <div id="modal" onclick="closeModal()">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <h3 style="margin-top: 0; margin-bottom: 20px;">Log Tasks for <span id="modalDateDisplay"></span></h3>
+            <div id="modalOptions"></div>
+            <button class="cancel-btn" onclick="closeModal()">Done</button>
+        </div>
+    </div>
+
+    <script>
+        let tasks = JSON.parse(localStorage.getItem('tasks')) || [];
+        let completions = JSON.parse(localStorage.getItem('completions')) || [];
+        let viewDate = new Date(); 
+        let selectedDateStr = null;
+
+        function showSheet(num) {
+            document.querySelectorAll('.sheet').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.getElementById('sheet' + num).classList.add('active');
+            document.querySelectorAll('.tab')[num-1].classList.add('active');
+            
+            if(num === 2) {
+                updateMonthPicker();
+                renderCalendar('calendar');
+            }
+            if(num === 3) {
+                updateFilterOptions();
+                renderFilteredCalendar();
+            }
+        }
+
+        function addTask() {
+            const name = document.getElementById('taskName').value.trim();
+            const color = document.getElementById('taskColor').value;
+            if(!name) return;
+            tasks.push({ id: Date.now(), name, color });
+            localStorage.setItem('tasks', JSON.stringify(tasks));
+            document.getElementById('taskName').value = '';
+            renderTaskList();
+        }
+
+        function renderTaskList() {
+            const list = document.getElementById('taskList');
+            if(tasks.length === 0) { list.innerHTML = '<div style="color:#a1a1aa; font-size:0.875rem;">No tasks yet.</div>'; return; }
+            list.innerHTML = tasks.map(t => `
+                <div class="task-item">
+                    <div class="task-color-indicator" style="background:${t.color}"></div>
+                    <span style="font-weight: 500;">${t.name}</span>
+                </div>
+            `).join('');
+        }
+
+        function updateMonthPicker() {
+            const picker = document.getElementById('monthPicker');
+            const yyyy = viewDate.getFullYear();
+            const mm = String(viewDate.getMonth() + 1).padStart(2, '0');
+            picker.value = `${yyyy}-${mm}`;
+        }
+
+        function handleMonthChange() {
+            const picker = document.getElementById('monthPicker');
+            if (picker.value) {
+                const [year, month] = picker.value.split('-');
+                viewDate = new Date(year, month - 1, 1);
+                renderCalendar('calendar');
+                if (document.getElementById('sheet3').classList.contains('active')) {
+                    renderFilteredCalendar();
+                }
+            }
+        }
+
+        function renderCalendar(containerId, filterTaskId = null) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            
+            const year = viewDate.getFullYear();
+            const month = viewDate.getMonth();
+
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const firstDayIndex = new Date(year, month, 1).getDay(); 
+
+            // Headers (S, M, T...)
+            ['S', 'M', 'T', 'W', 'T', 'F', 'S'].forEach(h => {
+                const div = document.createElement('div');
+                div.className = 'day header'; div.innerText = h;
+                container.appendChild(div);
+            });
+
+            // Empty padding for first week
+            for (let i = 0; i < firstDayIndex; i++) {
+                const div = document.createElement('div');
+                div.className = 'day empty';
+                container.appendChild(div);
+            }
+
+            // Actual Days
+            for (let i = 1; i <= daysInMonth; i++) {
+                // Ensure double digits for matching format YYYY-MM-DD
+                const dStr = String(i).padStart(2, '0');
+                const mStr = String(month + 1).padStart(2, '0');
+                const dateStr = `${year}-${mStr}-${dStr}`;
+                
+                const div = document.createElement('div');
+                div.className = 'day';
+                div.innerHTML = `<div class="day-num">${i}</div><div class="dot-container"></div>`;
+                
+                const dayCompletions = completions.filter(c => c.date === dateStr);
+                const dotContainer = div.querySelector('.dot-container');
+                
+                dayCompletions.forEach(c => {
+                    const task = tasks.find(t => t.id == c.taskId);
+                    if (task && (!filterTaskId || task.id == filterTaskId)) {
+                        const dot = document.createElement('div');
+                        dot.className = 'dot'; dot.style.background = task.color;
+                        dotContainer.appendChild(dot);
+                    }
+                });
+
+                if(containerId === 'calendar') { div.onclick = () => openModal(dateStr, i); }
+                container.appendChild(div);
+            }
+        }
+
+        function openModal(dateStr, dayNum) {
+            if(tasks.length === 0) { alert("Please add a task in Sheet 1 first!"); return; }
+            selectedDateStr = dateStr;
+            
+            const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            document.getElementById('modalDateDisplay').innerText = `${monthNames[viewDate.getMonth()]} ${dayNum}`;
+            
+            document.getElementById('modal').style.display = 'flex';
+            renderModalOptions();
+        }
+
+        function renderModalOptions() {
+            const options = document.getElementById('modalOptions');
+            options.innerHTML = tasks.map(t => {
+                const isCompleted = completions.some(c => c.date === selectedDateStr && c.taskId === t.id);
+                return `
+                <button class="modal-btn ${isCompleted ? 'active' : ''}" onclick="toggleCompletion(${t.id})">
+                    <div style="display:flex; align-items:center;">
+                        <div class="task-color-indicator" style="background:${t.color}"></div>
+                        ${t.name}
+                    </div>
+                    ${isCompleted ? '✓' : '+'}
+                </button>
+                `;
+            }).join('');
+        }
+
+        function closeModal() { document.getElementById('modal').style.display = 'none'; }
+
+        function toggleCompletion(taskId) {
+            const existsIndex = completions.findIndex(c => c.date === selectedDateStr && c.taskId === taskId);
+            if(existsIndex > -1) { completions.splice(existsIndex, 1); } 
+            else { completions.push({ date: selectedDateStr, taskId: taskId }); }
+            
+            localStorage.setItem('completions', JSON.stringify(completions));
+            renderModalOptions(); // Refresh modal state visually
+            renderCalendar('calendar'); // Refresh background calendar
+        }
+
+        function updateFilterOptions() {
+            const select = document.getElementById('filterSelect');
+            select.innerHTML = '<option value="">-- Choose a Task --</option>' + 
+                tasks.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+        }
+
+        function renderFilteredCalendar() {
+            const taskId = document.getElementById('filterSelect').value;
+            renderCalendar('filterCalendar', taskId);
+            
+            if(taskId) {
+                const count = completions.filter(c => c.taskId == taskId).length;
+                document.getElementById('totalDays').innerText = count;
+            } else {
+                document.getElementById('totalDays').innerText = 0;
+            }
+        }
+
+        renderTaskList();
+        updateMonthPicker();
+    </script>
+</body>
+</html>
